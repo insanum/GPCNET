@@ -145,6 +145,8 @@ int split_subcomms(int nsubcomms, MPI_Comm local_comm, MPI_Comm base_comm, int *
                    MPI_Comm *test_comm, MPI_Comm *subcomm);
 int node_slice_subcomms(CommConfig_t *config, CommNodes_t *nodes, int *node_list,
                         int list_size, MPI_Comm *subcomm);
+int node_slice_subcomms_t(CommConfig_t *config, CommNodes_t *nodes, int *node_list,
+                        int list_size, MPI_Comm *subcomm);
 int congestion_subcomms(CommConfig_t *config, CommNodes_t *nodes, int *congestor_node_list,
                         int list_size, int *am_congestor, MPI_Comm *subcomm);
 

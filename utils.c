@@ -18,6 +18,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <network_test.h>
+#include <ifaddrs.h>
+#include <netinet/in.h> 
+#include <string.h> 
+#include <arpa/inet.h>
+#include <unistd.h> 
 
 /* these establish the size of the table written to STDOUT */
 #ifdef VERBOSE
@@ -79,6 +84,48 @@ int init_mpi(CommConfig_t *config, CommNodes_t *nodes, int *argc, char ***argv, 
      mpi_error(MPI_Init(argc, argv));
      mpi_error(MPI_Comm_rank(MPI_COMM_WORLD, &config->myrank));
      mpi_error(MPI_Comm_size(MPI_COMM_WORLD, &config->nranks));
+
+     //printf("MPI_MAX_PROCESSOR_NAME %d\n", MPI_MAX_PROCESSOR_NAME);
+     //printf("--> init_mpi in util.c myrank %d nranks %d\n", config->myrank, config->nranks);
+     //printf("--> init_mpi in util.c %s\n", MPI_COMM_WORLD);
+     // Get the name of the processor
+     char processor_name[MPI_MAX_PROCESSOR_NAME];
+     int name_len;
+     MPI_Get_processor_name(processor_name, &name_len);
+ 
+    /* struct ifaddrs * ifAddrStruct=NULL;
+    struct ifaddrs * ifa=NULL;
+    void * tmpAddrPtr=NULL;
+
+    char hostbuffer[256];
+
+    gethostname(hostbuffer, sizeof(hostbuffer));
+    getifaddrs(&ifAddrStruct);
+
+    for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr) {
+            continue;
+        }
+        if (ifa->ifa_addr->sa_family == AF_INET) { // check it is IP4
+            // is a valid IP4 Address
+            tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            char addressBuffer[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+            //printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer); 
+            printf("---MV--- Processor %s, rank %d out of %d processors. %s IP Address %s==== hostname %s\n",
+                    processor_name, config->myrank, config->nranks, ifa->ifa_name, addressBuffer, hostbuffer);
+        } else if (ifa->ifa_addr->sa_family == AF_INET6) { // check it is IP6
+            // is a valid IP6 Address
+            tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+            char addressBuffer[INET6_ADDRSTRLEN];
+            inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+            //printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer); 
+            } 
+          }
+    if (ifAddrStruct!=NULL) freeifaddrs(ifAddrStruct); */
+    // Print off a hello world message
+     printf("--> processor %s, rank %d out of %d processors\n",
+            processor_name, config->myrank, config->nranks);
 
      /* get the list of nodes across all ranks */
      all_hnames      = malloc(sizeof(char) * config->nranks * MPI_MAX_PROCESSOR_NAME);

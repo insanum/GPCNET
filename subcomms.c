@@ -74,7 +74,8 @@ int node_slice_subcomms(CommConfig_t *config, CommNodes_t *nodes, int *node_list
           CommNode_t *tmp = nodes->nodes_head;
           for (j = 0; j < nodes->nnodes; j++) {
                if (tmp->node_id == node_list[i]) {
-                    ngroups = (ngroups < tmp->ppn) ? tmp->ppn : ngroups;
+                    //ngroups = (ngroups < tmp->ppn) ? tmp->ppn : ngroups;
+                    ngroups = (ngroups < tmp->ppn/2) ? tmp->ppn/2 : ngroups;
                     used_nodes[k] = tmp;
                     k++;
                }
@@ -87,7 +88,8 @@ int node_slice_subcomms(CommConfig_t *config, CommNodes_t *nodes, int *node_list
           /* determine the number of ranks each group will have */
           group_size = 0;
           for (j = 0; j < list_size; j++) {
-               if (used_nodes[j]->ppn > i) group_size++;
+               //if (used_nodes[j]->ppn > i) group_size++;
+               if (used_nodes[j]->ppn/2 > i) group_size++;
           }
           group_list = malloc(sizeof(int) * group_size);
           if (group_list == NULL) {
@@ -98,9 +100,89 @@ int node_slice_subcomms(CommConfig_t *config, CommNodes_t *nodes, int *node_list
           int grank = 0;
           ingroup = 0;
           for (j = 0; j < list_size; j++) {
-               if (used_nodes[j]->ppn > i) {
+               //if (used_nodes[j]->ppn > i) {
+               if (used_nodes[j]->ppn/2 > i) {
                     CommRank_t *rtmp = used_nodes[j]->ranks_head;
                     for (k = 0; k < i; k++) {
+                         rtmp = rtmp->next;
+                    }
+                    group_list[grank] = rtmp->rank;
+                    if (config->myrank == group_list[grank]) ingroup = 1;
+                    grank++;
+               }
+          }
+          mpi_error(MPI_Group_incl(base_group, group_size, group_list,
+                                   &comm_group));
+
+          if (ingroup == 1) {
+               mpi_error(MPI_Comm_create(MPI_COMM_WORLD, comm_group, subcomm));
+          } else {
+               mpi_error(MPI_Comm_create(MPI_COMM_WORLD, comm_group, &null_comm));
+          }
+
+          free(group_list);
+     }
+
+     free(used_nodes);
+
+     return 0;
+}
+
+/* create a subcomm that includes the same local rank as the calling rank on every other node */
+int node_slice_subcomms_t(CommConfig_t *config, CommNodes_t *nodes, int *node_list, 
+                        int list_size, MPI_Comm *subcomm)
+{
+     int i, j, k, group_size, ingroup;
+     int *group_list;
+     MPI_Group base_group;
+     MPI_Group comm_group;
+     MPI_Comm null_comm;
+     CommNode_t **used_nodes;
+
+     mpi_error(MPI_Comm_group(MPI_COMM_WORLD, &base_group));
+
+     /* find the maximum ppn across the nodes we want and that is how many comm groups we'll make */
+     used_nodes = malloc(sizeof(CommNode_t *) * list_size);
+     if (used_nodes == NULL) {
+          die("Failed to allocate used_nodes in node_slice_subcomms()\n");
+     }
+     int ngroups = 0;
+     k = 0;
+     for (i = 0; i < list_size; i++) {
+          CommNode_t *tmp = nodes->nodes_head;
+          for (j = 0; j < nodes->nnodes; j++) {
+               if (tmp->node_id == node_list[i]) {
+                    //ngroups = (ngroups < tmp->ppn) ? tmp->ppn : ngroups;
+                    ngroups = (ngroups < tmp->ppn/2) ? tmp->ppn/2 : ngroups;
+                    used_nodes[k] = tmp;
+                    k++;
+               }
+               tmp = tmp->next;
+          }
+     }
+
+     for (i = 0; i < ngroups; i++) {
+
+          /* determine the number of ranks each group will have */
+          group_size = 0;
+          for (j = 0; j < list_size; j++) {
+               //if (used_nodes[j]->ppn > i) group_size++;
+               if (used_nodes[j]->ppn/2 > i) group_size++;
+          }
+          group_list = malloc(sizeof(int) * group_size);
+          if (group_list == NULL) {
+               die("Failed to allocate group_list in node_slice_subcomms()\n");
+          }
+
+          /* determine the specific ranks one in this group */
+          int grank = 0;
+          ingroup = 0;
+          for (j = 0; j < list_size; j++) {
+               //if (used_nodes[j]->ppn > i) {
+               if (used_nodes[j]->ppn/2 > i) {
+                    CommRank_t *rtmp = used_nodes[j]->ranks_head;
+                    //for (k = 0; k < i; k++) {
+                    for (k = 0; k < (i+ngroups); k++) { // advanced to the second half of ranks for test nodes
                          rtmp = rtmp->next;
                     }
                     group_list[grank] = rtmp->rank;
@@ -149,7 +231,8 @@ int congestion_subcomms(CommConfig_t *config, CommNodes_t *nodes, int *congestor
           CommNode_t *tmp = nodes->nodes_head;
           for (j = 0; j < nodes->nnodes; j++) {
                if (tmp->node_id == congestor_node_list[i]) {
-                    group_size += tmp->ppn;
+                    //group_size += tmp->ppn;
+                    group_size += tmp->ppn/2;
                     used_nodes[k] = tmp;
                     k++;
                }
@@ -167,7 +250,8 @@ int congestion_subcomms(CommConfig_t *config, CommNodes_t *nodes, int *congestor
      *am_congestor = 0;
      for (i = 0; i < list_size; i++) {
           CommRank_t *rtmp = used_nodes[i]->ranks_head;
-          for (j = 0; j < used_nodes[i]->ppn; j++) {
+          //for (j = 0; j < used_nodes[i]->ppn; j++) {
+          for (j = 0; j < used_nodes[i]->ppn/2; j++) {
                congestors_group_list[grank] = rtmp->rank;
                if (config->myrank == rtmp->rank) *am_congestor = 1;
                rtmp = rtmp->next;

@@ -127,7 +127,9 @@ int main(int argc, char* argv[])
      init_mpi(&test_config, &nodes, &argc, &argv, BW_MSG_COUNT, BW_MSG_COUNT, A2A_MSG_COUNT,
               1, 1, 1, BW_OUTSTANDING);
 
+     printf("--> %d %s %s\n", (*nodes.nodes).ppn, (*nodes.nodes).host_name, (*nodes.nodes_head).host_name);
      if (nodes.nnodes < 2) {
+          //printf("--> %d %s %s\n", (*nodes.nodes).ppn, (*nodes.nodes).host_name, (*nodes.nodes_head).host_name);
           if (test_config.myrank == 0) {
                printf("ERROR: this application must be run on at least 2 nodes\n");
           }
