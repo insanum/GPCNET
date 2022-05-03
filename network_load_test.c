@@ -27,9 +27,12 @@
 
 //#define NUM_NETWORK_TESTS 3
 //#define NUM_CONGESTOR_TESTS 4
-int NUM_NETWORK_TESTS = 3;
-int NUM_CONGESTOR_TESTS = 4;
-bool skip_network_baseline = false;
+int NUM_NETWORK_TESTS = 0;
+int NUM_CONGESTOR_TESTS = 0;
+uint32_t NETWORK_TESTS = 0;
+uint32_t CONGESTOR_TESTS = 0;
+#define TB(x) (1 << (x)) /* test bit */
+bool skip_baseline = false;
 
 /* loop counts for the various tests */
 #define NUM_LAT_TESTS 10000
@@ -149,7 +152,11 @@ int run_network_tests(CommConfig_t *config, int ncong_tests, MPI_Comm test_comm,
           die("Failed to allocate results in run_network_tests()\n");
      }
 
-if (!skip_network_baseline) {
+/*
+ * Run the network baseline tests when they aren't skipped via the -s flag
+ * or there are not congestor tests specified.
+ */
+if (!skip_baseline || !ncong_tests) {
      /* gather the baseline performance */
      print_header(config, 0, 0);
      for (itest = 0; itest < NUM_NETWORK_TESTS; itest++) {
@@ -178,9 +185,13 @@ if (!skip_network_baseline) {
      /* barrier to prevent congestors from communicating while we get baselines */
      mpi_error(MPI_Barrier(global_comm));
 
+/* Bail now if there are no congestion tests. Network baseline only. */
+if (!ncong_tests)
+     return 0;
+
      /* allow congestor tests to get their baselines */
 #ifdef VERBOSE
-if (skip_network_baseline) {
+if (!skip_baseline) {
      print_header(config, 1, 0);
      for (ctest = 0; ctest < ncong_tests; ctest++) {
           print_results(config, myrank, 0, 0, " ", " ", &nullrslt);
@@ -235,6 +246,7 @@ if (skip_network_baseline) {
      }
 
      /* now print the final results table */
+if (!skip_baseline) {
      print_header(config, 3, 0);
      for (itest = 0; itest < NUM_NETWORK_TESTS; itest++) {
 
@@ -249,6 +261,7 @@ if (skip_network_baseline) {
                }
           }
      }
+}
 
      return 0;
 }
@@ -375,7 +388,7 @@ int run_congestor_tests(CommConfig_t *config, int nntwk_tests, int congestor_set
      }
 
      /* barrier to let regular network tests get their baselines */
-if (!skip_network_baseline) {
+if (!skip_baseline && nntwk_tests) {
      print_header(config, 0, 0);
      for (itest = 0; itest < nntwk_tests; itest++) {
           print_results(config, myrank, 0, 0, " ", " ", &nullrslt);
@@ -386,6 +399,11 @@ if (!skip_network_baseline) {
      /* loop over the congestor test and gather those baselines */
      results.distribution = NULL;
 #ifdef VERBOSE
+/*
+ * Run the congestor baseline if it's not skipped via the -s flag or run
+ * them if there are no network tests specified.
+ */
+if (!skip_baseline || !nntwk_tests) {
      print_header(config, 1, 0);
      for (ctest = 0; ctest < NUM_CONGESTOR_TESTS; ctest++) {
 
@@ -417,10 +435,15 @@ if (!skip_network_baseline) {
           }
 
      }
+}
 #endif
 
      /* sync with the network tests */
      mpi_error(MPI_Barrier(global_comm));
+
+/* Bail now if there are no network tests. Congestor baseline only. */
+if (!nntwk_tests)
+    return 0;
 
      /* loop over the combined tests */
 #ifndef VERBOSE
@@ -516,6 +539,8 @@ if (!skip_network_baseline) {
      }
 
      /* now print the final results table */
+/* Only print the final results when there was a baseline run to compare. */
+if (!skip_baseline) {
      print_header(config, 3, 0);
      for (itest = 0; itest < nntwk_tests; itest++) {
 
@@ -526,6 +551,7 @@ if (!skip_network_baseline) {
           }
 
      }
+}
 
      free(congestor_perf.baseline_perf_hires);
      free(congestor_perf.perf_hires);
@@ -607,6 +633,7 @@ int build_subcomms(int ncongestor_tests, CommConfig_t *config, CommNodes_t *node
 
      /* congestors now further slice up their communicator into that for the different congestor tests */
      if (*am_congestor) {
+        if (ncongestor_tests)
           split_subcomms(ncongestor_tests, *local_comm, tmp_comm, congestor_set, test_comm, congestor_comm);
      }
 
@@ -661,19 +688,21 @@ void usage(char *cmd)
 {
     printf(
 "\n"
-"Usage: %s [ -n # ] [ -c # ] [ -s ]\n"
-"       -n #      number of network tests\n"
-"       -c #      number of congestor tests\n"
-"       -s        skip initial network baseline\n"
+"Usage: %s [ -n <test1[,test2,...]> ] [ -c <test1[,test2,...]> ] [ -s ]\n"
+"       -n <test1[,test2,...]>    network tests\n"
+"       -c <test1[,test2,...]>    congestor tests\n"
+"       -s                        skip initial network/congestor baseline\n"
+"                                 (ignored when either no network or\n"
+"                                 congestor tests are specified\n"
 "\n"
-"-n 1 = P2P_LATENCY\n"
-"-n 2 = P2P_LATENCY, P2P_NEIGHBORS\n"
-"-n 3 = P2P_LATENCY, P2P_NEIGHBORS, ALLREDUCE_LATENCY\n"
+"Network Tests: P2P_LATENCY\n"
+"               P2P_NEIGHBORS\n"
+"               ALLREDUCE_LATENCY\n"
 "\n"
-"-c 1 = A2A_CONGESTOR\n"
-"-c 2 = A2A_CONGESTOR, P2P_INCAST_CONGESTOR\n"
-"-c 3 = A2A_CONGESTOR, P2P_INCAST_CONGESTOR, RMA_INCAST_CONGESTOR\n"
-"-c 4 = A2A_CONGESTOR, P2P_INCAST_CONGESTOR, RMA_INCAST_CONGESTOR, RMA_BCAST_CONGESTOR\n"
+"Congestor Tests: A2A_CONGESTOR\n"
+"                 P2P_INCAST_CONGESTOR\n"
+"                 RMA_INCAST_CONGESTOR\n"
+"                 RMA_BCAST_CONGESTOR\n"
 "\n",
 cmd);
 }
@@ -684,6 +713,7 @@ int main(int argc, char* argv[])
      CommNodes_t nodes;
      MPI_Comm local_comm, test_comm, congestor_comm;
      int i, c, am_congestor, congestor_set, nt_nodes, nc_nodes;
+     char *str;
 
      while ((c = getopt (argc, argv, "hn:c:s")) != -1) {
          switch (c) {
@@ -692,23 +722,62 @@ int main(int argc, char* argv[])
              exit(0);
              break;
          case 'n':
-             NUM_NETWORK_TESTS = atoi(optarg);
-             if (NUM_NETWORK_TESTS < 0 || NUM_NETWORK_TESTS > 3) {
-                 printf("ERROR: invalid number of network tests\n");
-                 exit(1);
+             str = strtok(optarg, ",");
+             while (str != NULL) {
+                 if ((strcmp(str, "P2P_LATENCY") == 0) &&
+                     !(NETWORK_TESTS & TB(P2P_LATENCY))) {
+                     NETWORK_TESTS |= TB(P2P_LATENCY);
+                     NUM_NETWORK_TESTS += 1;
+                 } else if ((strcmp(str, "P2P_NEIGHBORS") == 0) &&
+                            !(NETWORK_TESTS & TB(P2P_NEIGHBORS))) {
+                     NETWORK_TESTS |= TB(P2P_NEIGHBORS);
+                     NUM_NETWORK_TESTS += 1;
+                 } else if ((strcmp(str, "ALLREDUCE_LATENCY") == 0) &&
+                            !(NETWORK_TESTS & TB(ALLREDUCE_LATENCY))) {
+                     NETWORK_TESTS |= TB(ALLREDUCE_LATENCY);
+                     NUM_NETWORK_TESTS += 1;
+                 } else {
+                     printf("ERROR: unknown network test ('%s')\n", str);
+                     exit(1);
+                 }
+                 str = strtok(NULL, ",");
              }
              break;
          case 'c':
-             NUM_CONGESTOR_TESTS = atoi(optarg);
-             if (NUM_CONGESTOR_TESTS < 0 || NUM_CONGESTOR_TESTS > 4) {
-                 printf("ERROR: invalid number of congestor tests\n");
-                 exit(1);
+             str = strtok(optarg, ",");
+             while (str != NULL) {
+                 if ((strcmp(str, "A2A_CONGESTOR") == 0) &&
+                     !(CONGESTOR_TESTS & TB(A2A_CONGESTOR))) {
+                     CONGESTOR_TESTS |= TB(A2A_CONGESTOR);
+                     NUM_CONGESTOR_TESTS += 1;
+                 } else if ((strcmp(str, "P2P_INCAST_CONGESTOR") == 0) &&
+                            !(CONGESTOR_TESTS & TB(P2P_INCAST_CONGESTOR))) {
+                     CONGESTOR_TESTS |= TB(P2P_INCAST_CONGESTOR);
+                     NUM_CONGESTOR_TESTS += 1;
+                 } else if ((strcmp(str, "RMA_INCAST_CONGESTOR") == 0) &&
+                            !(CONGESTOR_TESTS & TB(RMA_INCAST_CONGESTOR))) {
+                     CONGESTOR_TESTS |= TB(RMA_INCAST_CONGESTOR);
+                     NUM_CONGESTOR_TESTS += 1;
+                 } else if ((strcmp(str, "RMA_BCAST_CONGESTOR") == 0) &&
+                            !(CONGESTOR_TESTS & TB(RMA_BCAST_CONGESTOR))) {
+                     CONGESTOR_TESTS |= TB(RMA_BCAST_CONGESTOR);
+                     NUM_CONGESTOR_TESTS += 1;
+                 } else {
+                     printf("ERROR: unknown congestor test ('%s')\n", str);
+                     exit(1);
+                 }
+                 str = strtok(NULL, ",");
              }
              break;
          case 's':
-             skip_network_baseline = true;
+             skip_baseline = true;
              break;
          }
+     }
+
+     if (!NUM_NETWORK_TESTS && !NUM_CONGESTOR_TESTS) {
+         printf("ERROR: must specify network and/or congestor tests\n");
+         exit(1);
      }
 
      network_tests_list = malloc(sizeof(CommTest_t) * NUM_NETWORK_TESTS);
@@ -719,7 +788,8 @@ int main(int argc, char* argv[])
      build_subcomms(NUM_CONGESTOR_TESTS, &test_config, &nodes, &am_congestor, &congestor_set, &congestor_comm,
                     &test_comm, &local_comm, &nt_nodes, &nc_nodes);
      if (am_congestor) {
-          init_rma(&test_config, congestor_comm);
+         if (NUM_CONGESTOR_TESTS)
+            init_rma(&test_config, congestor_comm);
      } else {
           init_rma(&test_config, test_comm);
      }
@@ -728,35 +798,90 @@ int main(int argc, char* argv[])
           printf("NetworkLoad Tests v%3.1f\n", VERSION);
           printf("  Test with %i MPI ranks (%i nodes)\n", test_config.nranks, nodes.nnodes);
           printf("  %i nodes running Network Tests\n", nt_nodes);
-          printf("  %i nodes running Congestion Tests (min %i nodes per congestor)\n\n", nc_nodes, (int)floor((double)nc_nodes/NUM_CONGESTOR_TESTS));
+          printf("  %i nodes running Congestion Tests (min %i nodes per congestor)\n\n", nc_nodes,
+                 (NUM_CONGESTOR_TESTS) ? (int)floor((double)nc_nodes/NUM_CONGESTOR_TESTS) : 0);
           printf("  Legend\n   RR = random ring communication pattern\n   Lat = latency\n   BW = bandwidth\n   BW+Sync = bandwidth with barrier");
      }
 
      /* define the sequence of each test type.  to increase the test count of either you must update
         the setting for NUM_NETWORK_TESTS and NUM_CONGESTOR_TESTS defined at the top */
-     if (NUM_NETWORK_TESTS > 0)
-        network_tests_list[0] = P2P_LATENCY;
-     if (NUM_NETWORK_TESTS > 1)
-        network_tests_list[1] = P2P_NEIGHBORS;
-     if (NUM_NETWORK_TESTS > 2)
-        network_tests_list[2] = ALLREDUCE_LATENCY;
+     for (i = 0; i < NUM_NETWORK_TESTS; i++) {
+         if (!NETWORK_TESTS) {
+             printf("ERROR: failed to setup network tests\n");
+             exit(1);
+         }
 
-     if (NUM_CONGESTOR_TESTS > 0)
-        congestor_tests_list[0] = A2A_CONGESTOR;
-     if (NUM_CONGESTOR_TESTS > 1)
-        congestor_tests_list[1] = P2P_INCAST_CONGESTOR;
-     if (NUM_CONGESTOR_TESTS > 2)
-        congestor_tests_list[2] = RMA_INCAST_CONGESTOR;
-     if (NUM_CONGESTOR_TESTS > 3)
-        congestor_tests_list[3] = RMA_BCAST_CONGESTOR;
+         if (NETWORK_TESTS & TB(P2P_LATENCY)) {
+             network_tests_list[i] = P2P_LATENCY;
+             NETWORK_TESTS &= ~TB(P2P_LATENCY);
+         } else if (NETWORK_TESTS & TB(P2P_NEIGHBORS)) {
+             network_tests_list[i] = P2P_NEIGHBORS;
+             NETWORK_TESTS &= ~TB(P2P_NEIGHBORS);
+         } else if (NETWORK_TESTS & TB(ALLREDUCE_LATENCY)) {
+             network_tests_list[i] = ALLREDUCE_LATENCY;
+             NETWORK_TESTS &= ~TB(ALLREDUCE_LATENCY);
+         }
+     }
+
+     for (i = 0; i < NUM_CONGESTOR_TESTS; i++) {
+         if (!CONGESTOR_TESTS) {
+             printf("ERROR: failed to setup congestor tests\n");
+             exit(1);
+         }
+
+         if (CONGESTOR_TESTS & TB(A2A_CONGESTOR)) {
+            congestor_tests_list[i] = A2A_CONGESTOR;
+            CONGESTOR_TESTS &= ~TB(A2A_CONGESTOR);
+         } else if (CONGESTOR_TESTS & TB(P2P_INCAST_CONGESTOR)) {
+            congestor_tests_list[i] = P2P_INCAST_CONGESTOR;
+            CONGESTOR_TESTS &= ~TB(P2P_INCAST_CONGESTOR);
+         } else if (CONGESTOR_TESTS & TB(RMA_INCAST_CONGESTOR)) {
+            congestor_tests_list[i] = RMA_INCAST_CONGESTOR;
+            CONGESTOR_TESTS &= ~TB(RMA_INCAST_CONGESTOR);
+         } else if (CONGESTOR_TESTS & TB(RMA_BCAST_CONGESTOR)) {
+            congestor_tests_list[i] = RMA_BCAST_CONGESTOR;
+            CONGESTOR_TESTS &= ~TB(RMA_BCAST_CONGESTOR);
+         }
+     }
 
      if (am_congestor) {
 
-          run_congestor_tests(&test_config, NUM_NETWORK_TESTS, congestor_set, congestor_comm, test_comm, local_comm, MPI_COMM_WORLD);
+         if (NUM_CONGESTOR_TESTS) {
+            run_congestor_tests(&test_config, NUM_NETWORK_TESTS, congestor_set, congestor_comm, test_comm, local_comm, MPI_COMM_WORLD);
+         } else {
+            CommResults_t nullrslt;
+            int itest, myrank;
+
+            mpi_error(MPI_Comm_rank(local_comm, &myrank));
+
+            /* wait for network test baselines */
+            print_header(&test_config, 0, 0);
+            for (itest = 0; itest < NUM_NETWORK_TESTS; itest++) {
+                 print_results(&test_config, myrank, 0, 0, " ", " ", &nullrslt);
+            }
+            mpi_error(MPI_Barrier(MPI_COMM_WORLD));
+         }
 
      } else {
 
-          run_network_tests(&test_config, NUM_CONGESTOR_TESTS, test_comm, local_comm, MPI_COMM_WORLD);
+         if (NUM_NETWORK_TESTS) {
+            run_network_tests(&test_config, NUM_CONGESTOR_TESTS, test_comm, local_comm, MPI_COMM_WORLD);
+         } else {
+            CommResults_t nullrslt;
+            int ctest, myrank;
+
+            mpi_error(MPI_Comm_rank(local_comm, &myrank));
+
+            /* initial network baseline barrier */
+            mpi_error(MPI_Barrier(MPI_COMM_WORLD));
+
+            /* wait for congestor test baselines */
+            print_header(&test_config, 1, 0);
+            for (ctest = 0; ctest < NUM_CONGESTOR_TESTS; ctest++) {
+                 print_results(&test_config, myrank, 0, 0, " ", " ", &nullrslt);
+            }
+            mpi_error(MPI_Barrier(MPI_COMM_WORLD));
+         }
 
      }
 
